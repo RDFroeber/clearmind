@@ -30,14 +30,6 @@ export default function App() {
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
 
-  const { isRecording, toggleRecording, transcript } = useSpeechToText();
-
-  useEffect(() => {
-    if (transcript) {
-      setInput(prev => (prev ? prev + ' ' : '') + transcript);
-    }
-  }, [transcript]);
-
   // 🗓️ Google Sign-In (kept local because it handles UI token logic)
   const handleGoogleSignIn = () => {
     const client = window.google.accounts.oauth2.initTokenClient({
@@ -75,24 +67,72 @@ export default function App() {
   };
 
   // Calendar handlers
+  // Add new event
   const handleAddEvent = async (eventData) => {
-    if (!googleAccessToken) return alert('Please sign in first');
-    await createCalendarEvent(googleAccessToken, eventData);
-    const updatedEvents = await fetchCalendarEvents(googleAccessToken);
-    setCalendarEvents(updatedEvents);
+    if (!googleAccessToken) return alert('Sign in first');
+    const newEvent = await createCalendarEvent(googleAccessToken, eventData);
+    return newEvent; // <-- return so CalendarView can update state
   };
 
+  // Update event: TODO
   const handleUpdateEvent = async (eventId, updatedData) => {
     await updateCalendarEvent(googleAccessToken, eventId, updatedData);
     const updatedEvents = await fetchCalendarEvents(googleAccessToken);
     setCalendarEvents(updatedEvents);
   };
 
+  // Delete event
   const handleDeleteEvent = async (eventId) => {
-    await deleteCalendarEvent(googleAccessToken, eventId);
-    const updatedEvents = await fetchCalendarEvents(googleAccessToken);
-    setCalendarEvents(updatedEvents);
+    try {
+      await deleteCalendarEvent(googleAccessToken, eventId);
+      setCalendarEvents(prev => prev.filter(e => e.id !== eventId));
+    } catch (err) {
+      console.error('Error deleting event:', err);
+      alert('Failed to delete event');
+    }
   };
+
+   // Callback for when speech is transcribed
+   const handleTranscriptComplete = async (text) => {
+    setMessages(prev => [...prev, { role: 'user', content: text }]);
+    try {
+      // Send text to backend AI processing
+      const response = await fetch(`${process.env.REACT_APP_API_BASE_URL}/processSpeech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      const eventData = await response.json();
+
+      // Automatically create event in Google Calendar
+      if (googleAccessToken && eventData) {
+        const created = await createCalendarEvent(googleAccessToken, eventData);
+        // Update local calendar immediately
+        setCalendarEvents(prev => [
+          ...prev,
+          {
+            id: created.id,
+            title: created.summary,
+            description: created.description,
+            start: new Date(created.start.dateTime || created.start.date),
+            end: new Date(created.end.dateTime || created.end.date)
+          }
+        ]);
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Event created in your calendar!' }]);
+      }
+    } catch (err) {
+      console.error('Error processing transcript:', err);
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Failed to create event.' }]);
+    }
+  };
+
+
+  const { isRecording, toggleRecording, transcript } = useSpeechToText(handleTranscriptComplete);
+  useEffect(() => {
+    if (transcript) {
+      setInput(prev => (prev ? prev + ' ' : '') + transcript);
+    }
+  }, [transcript]);
 
   return (
     <div className="flex flex-col h-screen">
@@ -126,6 +166,8 @@ export default function App() {
             <CalendarView
               googleAccessToken={googleAccessToken}
               onAddEvent={handleAddEvent}
+              onUpdateEvent={handleUpdateEvent}
+              onDeleteEvent={handleDeleteEvent}
             />
           )}
         </div>

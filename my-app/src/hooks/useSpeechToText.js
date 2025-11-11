@@ -1,10 +1,10 @@
+// src/hooks/useSpeechToText.js
 import { useState, useEffect, useRef } from 'react';
 
-export default function useSpeechToText() {
+export default function useSpeechToText(onTranscriptComplete) {
   const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState(''); // added state for easy access
+  const [transcript, setTranscript] = useState('');
   const recognitionRef = useRef(null);
-  const transcriptRef = useRef('');
 
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -17,9 +17,9 @@ export default function useSpeechToText() {
 
       recognitionInstance.onresult = (event) => {
         const text = event.results[0][0].transcript;
-        transcriptRef.current = text;
-        setTranscript(text); // update state so components can react
+        setTranscript(text);
         setIsRecording(false);
+        if (onTranscriptComplete) onTranscriptComplete(text);
       };
 
       recognitionInstance.onerror = () => setIsRecording(false);
@@ -29,7 +29,7 @@ export default function useSpeechToText() {
     } else {
       console.warn('Speech recognition not supported in this browser.');
     }
-  }, []);
+  }, [onTranscriptComplete]);
 
   const toggleRecording = () => {
     if (!recognitionRef.current) return;
@@ -43,5 +43,5 @@ export default function useSpeechToText() {
     }
   };
 
-  return { isRecording, toggleRecording, transcript, transcriptRef };
+  return { isRecording, toggleRecording, transcript };
 }

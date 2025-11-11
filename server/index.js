@@ -1,8 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import whisperRoutes from './routes/whisper.js';
+// import whisperRoutes from './routes/whisper.js';
 import calendarRoutes from './routes/calendar.js';
+import speechRoutes from './routes/speech.js';
+import { speech } from 'googleapis/build/src/apis/speech/index.js';
 
 dotenv.config();
 
@@ -23,6 +25,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/processSpeech', speechRoutes);
 // app.use('/api/whisper', whisperRoutes);
 
 const PORT = process.env.PORT || 5001;

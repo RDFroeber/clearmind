@@ -9,13 +9,40 @@ function getCalendarClient(accessToken) {
 }
 
 export async function createEvent(accessToken, eventData) {
-  const calendar = getCalendarClient(accessToken);
-  const response = await calendar.events.insert({
-    calendarId: 'primary',
-    resource: eventData,
-  });
-  return response.data;
-}
+    const calendar = getCalendarClient(accessToken);
+  
+    // Ensure start and end are ISO strings
+    if (!eventData.start || !eventData.end) {
+      throw new Error("Event must have 'start' and 'end' fields");
+    }
+  
+    const event = {
+      summary: eventData.summary || '(No Title)',
+      description: eventData.description || '',
+      start: {
+        dateTime: new Date(eventData.start).toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      end: {
+        dateTime: new Date(eventData.end).toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      location: eventData.location || '',
+    };
+  
+    try {
+      const response = await calendar.events.insert({
+        calendarId: 'primary',
+        resource: event,
+      });
+      console.log("Created event:", response.data);
+      return response.data;
+    } catch (err) {
+      console.error("Error creating Google Calendar event:", err.response?.data || err.message);
+      throw err;
+    }
+  }
+  
 
 export async function getEvents(accessToken) {
     const calendar = getCalendarClient(accessToken);
