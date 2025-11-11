@@ -1,14 +1,17 @@
 # ProductStudio92
 
 ## TO FIX:
-- Currently using Gemini for calendar json generation
+- Currently using Gemini for calendar json generation (prompt located in server/services/geminiService.js)
 - Time is a bit off for gemini, edit the prompt to make it more specific/accurate (ex: give model the current date and time)
 - Events not showing up right away on calendar, need to click refresh. --> make AI generated events show up automatically
-- creating/deleting events manually is a bit strange right now
-- Add functionality to delete/edit events by voice
+- creating/deleting events manually is a bit strange right now... fix UI
+- Add functionality to delete/edit events by voice (edit gemini prompt)
+- Voice to text only allows short snippets right now and generating one event at a time
+    - find better voice to text model
+    - also edit gemini prompt to potentially create multiple events
 
 
-**📅 Google Calendar Features:**
+## 📅 Google Calendar Features:
 
 **View Events:**
 
