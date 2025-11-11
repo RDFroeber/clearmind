@@ -1,5 +1,13 @@
 # ProductStudio92
 
+** TO FIX: **
+- Currently using Gemini for calendar json generation
+- Time is a bit off for gemini, edit the prompt to make it more specific/accurate (ex: give model the current date and time)
+- Events not showing up right away on calendar, need to click refresh. --> make AI generated events show up automatically
+- creating/deleting events manually is a bit strange right now
+- Add functionality to delete/edit events by voice
+
+
 **📅 Google Calendar Features:**
 
 **View Events:**
@@ -7,23 +15,6 @@
 -   Click the **Calendar icon** in the header to toggle the calendar panel
 -   View your upcoming events for the next 30 days
 -   See event details including title, time, location, and description
-
-**Create Events:**
-
--   Click **"New Event"** button
--   Fill in event details (title, description, location, start/end times)
--   Events are instantly added to your Google Calendar
-
-**Edit Events:**
-
--   Click the **edit icon** (pencil) on any event
--   Modify event details in the modal
--   Changes sync immediately to Google Calendar
-
-**Delete Events:**
-
--   Click the **trash icon** on any event
--   Confirm deletion to remove from your calendar
 
 **Setup Instructions:**
 
