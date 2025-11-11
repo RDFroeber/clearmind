@@ -1,6 +1,6 @@
 # ProductStudio92
 
-** TO FIX: **
+## TO FIX:
 - Currently using Gemini for calendar json generation
 - Time is a bit off for gemini, edit the prompt to make it more specific/accurate (ex: give model the current date and time)
 - Events not showing up right away on calendar, need to click refresh. --> make AI generated events show up automatically
