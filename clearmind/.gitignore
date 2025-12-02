@@ -2,8 +2,13 @@
 
 # dependencies
 /node_modules
+/server/node_modules
 /.pnp
 .pnp.js
+<<<<<<< HEAD
+=======
+.env
+>>>>>>> 5015210 (COMPLETE refactor of app)
 /server/.env
 
 # testing
@@ -13,7 +18,7 @@
 /build
 
 # misc
-.DS_Store
+*.DS_Store
 .env.local
 .env.development.local
 .env.test.local

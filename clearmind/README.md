@@ -1,70 +1,261 @@
-# Getting Started with Create React App
+# ClearMind AI
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+An intelligent voice assistant designed for the **Sandwich Generation** - adults juggling the care of aging parents while raising their own children. ClearMind AI provides empathetic listening, automatic scheduling, and intelligent workload management.
 
-## Available Scripts
+## 🎯 Product Vision
 
-In the project directory, you can run:
+ClearMind AI is a proactive mental load manager that:
+- Doesn't require you to type - just speak naturally
+- Transforms mental chaos into smaller, manageable actions
+- Takes in emotional input to organize and prioritize tasks
+- Provides empathetic support during overwhelming moments
 
-### `npm start`
+## ✨ Features
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+### Phase 1 (Current)
+- **Voice-to-Text**: Hands-free input using browser speech recognition
+- **Smart Intent Detection**: AI determines if you need empathy, advice, or event scheduling
+- **Empathetic Responses**: Context-aware emotional support
+- **Automatic Scheduling**: Creates calendar events from natural speech
+- **Google Calendar Integration**: Seamless event management
+- **Text-to-Speech**: Calming voice responses with fallback options
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### Phase 2 (Planned)
+- Schedule optimization based on workload analysis
+- Intelligent feedback on realistic time management
+- Family coordination features
 
-### `npm test`
+### Phase 3 (Future)
+- Family group scheduling
+- Advanced sentiment analysis
+- Personalized stress management insights
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## 🚀 Quick Start
 
-### `npm run build`
+### Prerequisites
+- Node.js 16+ and npm
+- OpenAI API key
+- Google Cloud project with Calendar API enabled
+- Google OAuth 2.0 Client ID
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### Installation
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+1. **Clone the repository**
+```bash
+git clone <your-repo-url>
+cd clearmind-ai
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+2. **Install frontend dependencies**
+```bash
+npm install
+```
 
-### `npm run eject`
+3. **Install backend dependencies**
+```bash
+cd server
+npm install
+cd ..
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+4. **Configure environment variables**
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Copy `.env.example` to `.env` and fill in your credentials:
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+```bash
+cp .env.example .env
+```
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+Edit `.env`:
+```env
+# OpenAI API Key (required)
+OPENAI_API_KEY=sk-proj-your-key-here
 
-## Learn More
+# Google OAuth Client ID (required for calendar features)
+REACT_APP_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+# API Base URL
+REACT_APP_API_BASE_URL=http://localhost:5001/api
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+# Server Port
+PORT=5001
+```
 
-### Code Splitting
+### Getting Your API Keys
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+#### OpenAI API Key
+1. Go to [platform.openai.com](https://platform.openai.com/)
+2. Sign up or log in
+3. Navigate to API Keys
+4. Create a new secret key
+5. Copy and paste into your `.env` file
 
-### Analyzing the Bundle Size
+#### Google OAuth Client ID
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing one
+3. Enable Google Calendar API
+4. Go to "Credentials" → "Create Credentials" → "OAuth client ID"
+5. Choose "Web application"
+6. Add authorized JavaScript origins: `http://localhost:3000`
+7. Copy the Client ID into your `.env` file
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+### Running the Application
 
-### Making a Progressive Web App
+**Development mode (recommended):**
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+Terminal 1 - Start backend:
+```bash
+cd server
+npm start
+```
 
-### Advanced Configuration
+Terminal 2 - Start frontend:
+```bash
+npm start
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+The app will open at `http://localhost:3000`
 
-### Deployment
+**Production build:**
+```bash
+npm run build
+cd server
+npm start
+# Serve the built files
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+## 🏗️ Architecture
 
-### `npm run build` fails to minify
+### Frontend (React)
+```
+src/
+├── components/             # UI components
+│   ├── Header.js           # App header with controls
+│   ├── MessageList.js      # Chat interface
+│   ├── InputArea.js        # Text/voice input
+│   ├── CalendarView.js     # Calendar display
+│   └── SettingsPanel.js    # Configuration panel
+├── services/               # API integrations
+│   ├── speechService.js    # Backend communication
+│   ├── ttsService.js       # Text-to-speech
+│   └── googleCalendar.js   # Calendar operations
+├── hooks/                  # Custom React hooks
+│   └── useSpeechToText.js  # Voice input
+└── App.js                  # Main application
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+### Backend (Express)
+```
+server/
+├── routes/
+│   ├── speech.js          # Speech processing endpoints
+│   └── calendar.js        # Calendar webhooks (future)
+├── services/
+│   └── openaiService.js   # OpenAI integration
+└── index.js               # Server entry point
+```
+
+## 🔄 User Flow
+
+```
+User speaks/types → Frontend captures input
+                          ↓
+                   Sends to backend
+                          ↓
+              AI analyzes intent (GPT-4)
+                          ↓
+        ┌─────────────────┼─────────────────┐
+        ↓                 ↓                 ↓
+       "event"          "vent"            "question"
+        ↓                 ↓                  ↓
+Extract calendar      Generate           Generate
+  event data           empathy            advice
+        ↓                 ↓                 ↓
+        └─────────────────┴─────────────────┘
+                          ↓
+                  Return response + TTS
+                          ↓
+            Display in chat + play audio
+                          ↓
+              (Auto-create calendar event if detected)
+```
+
+## 🎨 Design Decisions
+
+### Why These Technologies?
+
+**React**: Component-based architecture perfect for conversational UI
+**Express**: Lightweight backend for API orchestration
+**OpenAI GPT-4o-mini**: Best balance of speed, cost, and quality for intent detection
+**Browser Speech Recognition**: Free, instant, no API calls needed
+**Google Calendar API**: Direct integration with users' existing calendars
+
+### Key Architectural Choices
+
+1. **Intent-First Processing**: Every input is classified before action
+2. **Graceful Fallbacks**: Browser TTS if OpenAI rate limited
+3. **Security-First**: No API keys in frontend code
+4. **Conversation Context**: Last 10 messages sent for coherent responses
+5. **Client-Side Calendar**: OAuth handled in browser for better UX
+
+## 🔒 Security Notes
+
+**NEVER commit your `.env` file to version control!**
+
+The `.gitignore` file is configured to exclude:
+- `.env` and all environment files
+- `node_modules`
+- API keys and credentials
+- Build artifacts
+
+## 📊 Metrics & Success Criteria
+
+### Phase 1 Metrics
+- **Time Saved**: Avg. time to create an event (target: <30 seconds)
+- **Event Accuracy**: Correctly extracted event data (target: >85%)
+- **Active Usage**: Daily active sessions per user
+- **Empathy Score**: User satisfaction with emotional responses
+
+## 🐛 Troubleshooting
+
+### "API not configured" warning
+- Ensure `.env` file exists in root directory
+- Check that `REACT_APP_API_BASE_URL` is set
+- Restart the development server
+
+### Speech recognition not working
+- Check browser compatibility (Chrome, Edge work best)
+- Ensure microphone permissions are granted
+- Try refreshing the page
+
+### Calendar not connecting
+- Verify Google OAuth Client ID is correct
+- Check authorized origins in Google Cloud Console
+- Ensure Calendar API is enabled in your project
+
+### TTS not playing
+- Check browser console for rate limit messages
+- Will automatically fall back to browser TTS
+- Check that OpenAI API key has credits
+
+## 🤝 Contributing
+
+This is a course project for CS 5342 at Cornell Tech. 
+
+Team 92:
+- Yi Lu
+- Amanda Lu
+- Raleigh Froeber
+- Satya Prianggono
+
+## 📝 License
+
+Private - Cornell Tech Course Project
+
+## 🙏 Acknowledgments
+
+Built for the Sandwich Generation - the 23% of U.S. adults who deserve better tools to manage their complex lives.
+
+---
+
+**Need help?** Check the troubleshooting section or review the inline code comments.
