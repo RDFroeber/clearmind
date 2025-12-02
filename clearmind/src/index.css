@@ -1,12 +1,8 @@
-<<<<<<< HEAD
-body {
-=======
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 * {
->>>>>>> 5015210 (COMPLETE refactor of app)
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -25,8 +21,6 @@ body {
   height: 100vh;
   width: 100vw;
 }
-<<<<<<< HEAD
-=======
 
 /* Custom scrollbar styles */
 ::-webkit-scrollbar {
@@ -158,4 +152,3 @@ body {
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-in-out;
 }
->>>>>>> 5015210 (COMPLETE refactor of app)

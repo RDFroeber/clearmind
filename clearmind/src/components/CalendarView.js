@@ -2,14 +2,6 @@ import React from 'react';
 import { Calendar as BigCalendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-<<<<<<< HEAD
-import ReactDOM from 'react-dom';
-import {
-  fetchCalendarEvents,
-  createCalendarEvent
-} from '../services/googleCalendar';
-=======
->>>>>>> 5015210 (COMPLETE refactor of app)
 
 const localizer = momentLocalizer(moment);
 
