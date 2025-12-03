@@ -25,12 +25,40 @@ Your role:
 export async function analyzeAndExtractEvents(text) {
   try {
     const now = new Date();
+    
+    // Create timezone-aware date strings
+    const todayInEastern = now.toLocaleDateString('en-US', { 
+      timeZone: USER_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    
+    // Calculate tomorrow in Eastern timezone
+    const tomorrowDate = new Date(now.getTime() + 86400000);
+    const tomorrowInEastern = tomorrowDate.toLocaleDateString('en-US', { 
+      timeZone: USER_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    
+    // Convert to YYYY-MM-DD format for the prompt
+    const [todayMonth, todayDay, todayYear] = todayInEastern.split('/');
+    const todayFormatted = `${todayYear}-${todayMonth.padStart(2, '0')}-${todayDay.padStart(2, '0')}`;
+    
+    const [tomorrowMonth, tomorrowDay, tomorrowYear] = tomorrowInEastern.split('/');
+    const tomorrowFormatted = `${tomorrowYear}-${tomorrowMonth.padStart(2, '0')}-${tomorrowDay.padStart(2, '0')}`;
+    
     const currentDateTime = now.toLocaleString('en-US', { timeZone: USER_TIMEZONE });
+    
     const prompt = `Analyze this text and extract calendar information in ONE response.
 
 Text: "${text}"
 Current date/time: ${currentDateTime} (${USER_TIMEZONE})
 Current date/time (ISO): ${now.toISOString()}
+Today's date: ${todayFormatted}
+Tomorrow's date: ${tomorrowFormatted}
 
 Respond with ONLY valid JSON:
 {
@@ -58,7 +86,8 @@ Rules for event extraction:
 - Extract ALL events mentioned in the text
 - Use ISO 8601 format with timezone: "2025-12-03T16:00:00-05:00"
 - Default to 30-minute duration if not specified
-- Calculate relative dates (tomorrow = ${new Date(Date.now() + 86400000).toISOString().split('T')[0]})
+- For "today", use date: ${todayFormatted}
+- For "tomorrow", use date: ${tomorrowFormatted}
 - Default to 9:00 AM if time not specified
 - Use Eastern timezone (-05:00)
 - Set isFlexible to true for vague times ("sometime", "later", "afternoon")

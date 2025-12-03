@@ -21,7 +21,7 @@ export default function Header({
           <div>
             <h1 className="text-lg md:text-xl font-bold">ClearMind AI</h1>
             <p className="text-xs md:text-sm text-gray-400 hidden sm:block">
-              Your Sandwich Generation Assistant
+              Your empathetic assistant
             </p>
           </div>
         </div>

@@ -35,14 +35,39 @@ export default function SettingsPanel({
   };
 
   // Test TTS with current settings
-  const testVoice = () => {
-    const utterance = new SpeechSynthesisUtterance(
-      "Hello! This is how I'll sound with your current settings."
-    );
-    utterance.rate = userSettings.tts.speed;
-    utterance.pitch = 1.0;
-    utterance.volume = 0.8;
-    window.speechSynthesis.speak(utterance);
+  const testVoice = async () => {
+    try {
+      const apiBaseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
+      
+      const response = await fetch(`${apiBaseUrl}/speech/tts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: "Hello! This is how I'll sound with your current settings.",
+          voice: userSettings.tts.voice,
+          speed: userSettings.tts.speed
+        })
+      });
+  
+      if (!response.ok) {
+        throw new Error('Failed to generate test audio');
+      }
+  
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+      };
+      
+      await audio.play();
+    } catch (error) {
+      console.error('Error testing voice:', error);
+      alert('Failed to test voice. Please check your API connection.');
+    }
   };
 
   return (

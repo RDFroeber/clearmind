@@ -1,5 +1,6 @@
 // server/services/calendarService.js
 import { google } from 'googleapis';
+import { USER_TIMEZONE } from '../config/timezone.js';
 
 // Initialize calendar client using the user's access token
 function getCalendarClient(accessToken) {
@@ -9,39 +10,47 @@ function getCalendarClient(accessToken) {
 }
 
 export async function createEvent(accessToken, eventData) {
-    const calendar = getCalendarClient(accessToken);
-  
-    // Ensure start and end are ISO strings
-    if (!eventData.start || !eventData.end) {
-      throw new Error("Event must have 'start' and 'end' fields");
-    }
-  
-    const event = {
-      summary: eventData.summary || '(No Title)',
-      description: eventData.description || '',
-      start: {
-        dateTime: new Date(eventData.start).toISOString(),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
-      end: {
-        dateTime: new Date(eventData.end).toISOString(),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
-      location: eventData.location || '',
-    };
-  
-    try {
-      const response = await calendar.events.insert({
-        calendarId: 'primary',
-        resource: event,
-      });
-      console.log("Created event:", response.data);
-      return response.data;
-    } catch (err) {
-      console.error("Error creating Google Calendar event:", err.response?.data || err.message);
-      throw err;
-    }
+  const calendar = getCalendarClient(accessToken);
+
+  // ADD THESE DEBUG LOGS
+  console.log('=== CREATE EVENT DEBUG ===');
+  console.log('Raw eventData.start:', eventData.start);
+  console.log('Raw eventData.end:', eventData.end);
+  console.log('Type of start:', typeof eventData.start);
+  console.log('==========================');
+
+  if (!eventData.start || !eventData.end) {
+    throw new Error("Event must have 'start' and 'end' fields");
   }
+
+  const event = {
+    summary: eventData.summary || '(No Title)',
+    description: eventData.description || '',
+    start: {
+      dateTime: eventData.start,
+      timeZone: 'America/New_York',
+    },
+    end: {
+      dateTime: eventData.end,
+      timeZone: 'America/New_York',
+    },
+    location: eventData.location || '',
+  };
+
+  console.log('Event object being sent to Google:', JSON.stringify(event, null, 2));
+
+  try {
+    const response = await calendar.events.insert({
+      calendarId: 'primary',
+      resource: event,
+    });
+    console.log("Created event:", response.data);
+    return response.data;
+  } catch (err) {
+    console.error("Error creating Google Calendar event:", err.response?.data || err.message);
+    throw err;
+  }
+}
   
 
 export async function getEvents(accessToken) {
