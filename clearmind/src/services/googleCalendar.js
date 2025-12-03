@@ -1,4 +1,5 @@
 const CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
 
 const USER_TIMEZONE = 'America/New_York'; // Should match backend
 
@@ -221,5 +222,33 @@ export async function deleteCalendarEvent(accessToken, eventId) {
   } catch (error) {
     console.error('Error deleting calendar event:', error);
     throw error;
+  }
+}
+
+/**
+ * Check if user wants to update an event
+ */
+export async function checkUpdateIntent(text, recentEvents, allEvents) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/calendar/check-update`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text, recentEvents, allEvents }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to check update intent');
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error checking update intent:', error);
+    return {
+      isUpdateRequest: false,
+      eventToUpdate: '',
+      confidence: 0
+    };
   }
 }

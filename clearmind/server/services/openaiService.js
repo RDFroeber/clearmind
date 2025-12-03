@@ -126,9 +126,6 @@ Examples:
   }
 }
 
-/**
- * SIMPLIFIED: Faster conflict checking
- */
 export async function quickConflictCheck(newEvents, existingEvents) {
   try {
     if (!existingEvents || existingEvents.length === 0) {
@@ -172,7 +169,9 @@ Return ONLY valid JSON:
 Rules: 
 - Flag hasConflict=true ONLY if NEW event overlaps with EXISTING event
 - DO NOT flag if two NEW events overlap with each other
-- If no overlap with existing events, hasConflict=false`;
+- DO NOT flag if the NEW event has the same/similar name as an EXISTING event (ignore case)
+  Example: "Post Office" and "post office" are the SAME event, NOT a conflict
+- If no overlap with DIFFERENT existing events, hasConflict=false`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -199,6 +198,82 @@ Rules:
     return {
       events: newEvents.map(e => ({ ...e, hasConflict: false })),
       summary: 'Conflict check skipped'
+    };
+  }
+}
+
+/**
+ * Analyzes text to determine if user wants to update/reschedule an event
+ */
+export async function analyzeUpdateIntent(text, recentEvents = [], allEvents = []) {
+  try {
+    const recentEventsContext = recentEvents.length > 0 
+      ? `Recently created/mentioned events:\n${recentEvents.map((e, i) => 
+          `${i + 1}. "${e.summary || e.title}" at ${new Date(e.start).toLocaleString()}`
+        ).join('\n')}`
+      : 'No recent events';
+
+    const allEventsContext = allEvents.length > 0
+      ? `All calendar events:\n${allEvents.slice(0, 10).map((e, i) => 
+          `${i + 1}. "${e.title || e.summary}" at ${new Date(e.start).toLocaleString()}`
+        ).join('\n')}`
+      : 'No calendar events';
+
+    const prompt = `Analyze if user wants to update/reschedule an existing event.
+
+Text: "${text}"
+
+${recentEventsContext}
+
+${allEventsContext}
+
+Respond with ONLY valid JSON:
+{
+  "isUpdateRequest": true or false,
+  "eventToUpdate": "exact name of event to update (from the lists above)",
+  "newTime": "ISO 8601 datetime if time change requested",
+  "newDate": "ISO 8601 date if date change requested",
+  "newTitle": "new title if renaming",
+  "confidence": 0.0-1.0,
+  "reasoning": "brief explanation"
+}
+
+CRITICAL RULES:
+1. "reschedule X for/to Y" = ALWAYS an update request (confidence 1.0)
+2. "move X to Y" = ALWAYS an update request (confidence 1.0)
+3. "change X to Y" = ALWAYS an update request (confidence 1.0)
+4. "X is too early/late, make it Y" = ALWAYS an update request (confidence 1.0)
+5. Match events case-insensitively (e.g., "Post Office" = "post office")
+6. If event name mentioned exists in either list, it's an update
+7. For time references like "4:30", determine if it's AM or PM based on context (default PM for afternoon/evening times)
+
+Examples:
+- "reschedule post office for 4:30" → isUpdateRequest: true, eventToUpdate: "Go to the post office"
+- "move dentist to 3pm" → isUpdateRequest: true
+- "that's too early, change it to 10am" → isUpdateRequest: true, use most recent event
+- "add groceries at 5pm" → isUpdateRequest: false (new event)`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2,
+    });
+
+    const responseText = completion.choices[0].message.content.trim();
+    const cleanedText = responseText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+    
+    const result = JSON.parse(cleanedText);
+    console.log('Update intent analysis:', result);
+    return result;
+  } catch (error) {
+    console.error('Error analyzing update intent:', error);
+    return {
+      isUpdateRequest: false,
+      eventToUpdate: '',
+      confidence: 0
     };
   }
 }
