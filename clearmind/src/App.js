@@ -31,6 +31,47 @@ export default function App() {
   // TTS state
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // User preference settings
+  const [userSettings, setUserSettings] = useState({
+    tts: {
+      enabled: true,
+      voice: 'nova', // nova, alloy, echo, fable, onyx, shimmer
+      speed: 0.95,
+    },
+    empathy: {
+      level: 'balanced', // minimal, balanced, high
+      tone: 'professional', // professional, friendly, warm
+    }
+  });
+
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    const savedSettings = localStorage.getItem('clearmind_settings');
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings);
+        setUserSettings(parsed);
+        console.log('Loaded saved settings:', parsed);
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      }
+    }
+  }, []);
+
+  // Save settings to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem('clearmind_settings', JSON.stringify(userSettings));
+    console.log('Saved settings:', userSettings);
+  }, [userSettings]);
+
+  // Function to update settings
+  const updateSettings = (newSettings) => {
+    setUserSettings(prev => ({
+      ...prev,
+      ...newSettings
+    }));
+  };
+
   // Check if API is configured
   useEffect(() => {
     const hasApiKey = !!process.env.REACT_APP_API_BASE_URL;
@@ -148,9 +189,18 @@ export default function App() {
         content: msg.content
       }));
   
+      // CRITICAL DEBUG
+      console.log('=== FRONTEND: Sending to Backend ===');
+      console.log('Calendar events state:', calendarEvents);
+      console.log('Calendar events count:', calendarEvents?.length || 0);
+      if (calendarEvents && calendarEvents.length > 0) {
+        console.log('First event:', calendarEvents[0]);
+      }
+      console.log('=====================================');
       // Pass existing calendar events for conflict checking and deletion
-      const response = await processUserInput(text, conversationHistory, calendarEvents);
-      
+      const response = await processUserInput(text, conversationHistory, calendarEvents, userSettings);
+      console.log('Sending calendar events to backend:', calendarEvents.length);
+
       console.log('Response from backend:', response);
   
       const assistantMessage = { 
@@ -161,7 +211,7 @@ export default function App() {
       setMessages(prev => [...prev, assistantMessage]);
   
       if (response.text && !isSpeaking) {
-        playTextToSpeech(response.text, setIsSpeaking);
+        playTextToSpeech(response.text, setIsSpeaking, userSettings);
       }
   
       // Handle delete requests
@@ -352,6 +402,8 @@ export default function App() {
           googleAccessToken={googleAccessToken}
           onSignIn={handleGoogleSignIn}
           onSignOut={handleGoogleSignOut}
+          userSettings={userSettings}
+          onUpdateSettings={updateSettings}
         />
       )}
 

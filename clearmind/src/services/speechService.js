@@ -4,36 +4,28 @@ const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:500
  * Sends user input to backend for processing
  * Returns response with intent classification and appropriate action
  */
-export async function processUserInput(text, conversationHistory = [], existingEvents = []) {
+export async function processUserInput(text, conversationHistory = [], existingEvents = [], userSettings = null) {
+  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
+  
   try {
     const response = await fetch(`${API_BASE_URL}/speech/process`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         text,
-        conversationHistory: conversationHistory.slice(-10), // Send last 10 messages for context
-        existingEvents: existingEvents // Send calendar events for optimization
+        conversationHistory,
+        existingEvents,
+        userSettings: userSettings?.empathy, // Send empathy settings to backend
       }),
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message || 'Failed to process input');
+      throw new Error(`API request failed: ${response.status}`);
     }
 
-    const data = await response.json();
-    
-    return {
-      text: data.text,
-      intent: data.intent,
-      confidence: data.confidence,
-      eventData: data.eventData,
-      eventsData: data.eventsData,
-      optimizationInfo: data.optimizationInfo,
-    };
-
+    return await response.json();
   } catch (error) {
     console.error('Error processing user input:', error);
     throw error;

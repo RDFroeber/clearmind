@@ -1,93 +1,94 @@
-import { fetchTTSAudio } from './speechService.js';
-
-// Rate limiting state
 let lastTTSCall = 0;
-const TTS_RATE_LIMIT_MS = 3000; // 3 seconds between calls
+const TTS_RATE_LIMIT = 3000; // 3 seconds between OpenAI TTS calls
 
 /**
- * Plays text-to-speech with OpenAI TTS and browser fallback
+ * Play text-to-speech with user's preferred settings
  */
-export async function playTextToSpeech(text, setSpeakingState) {
-  // Rate limiting
-  const now = Date.now();
-  if (now - lastTTSCall < TTS_RATE_LIMIT_MS) {
-    console.log('TTS rate limit: using browser fallback');
-    speakWithBrowserTTS(text, setSpeakingState);
+export async function playTextToSpeech(text, setIsSpeaking, userSettings = null) {
+  if (!text) return;
+
+  // Check if TTS is enabled
+  if (userSettings && !userSettings.tts?.enabled) {
+    console.log('TTS disabled by user settings');
     return;
   }
-  lastTTSCall = now;
 
-  setSpeakingState(true);
+  setIsSpeaking(true);
 
   try {
-    // Try OpenAI TTS first
-    const audioBlob = await fetchTTSAudio(text);
-    const audioUrl = URL.createObjectURL(audioBlob);
-    
-    const audio = new Audio(audioUrl);
-    
-    audio.onended = () => {
-      setSpeakingState(false);
-      URL.revokeObjectURL(audioUrl);
-    };
-    
-    audio.onerror = () => {
-      console.error('Audio playback error, falling back to browser TTS');
-      speakWithBrowserTTS(text, setSpeakingState);
-    };
-    
-    await audio.play();
+    const now = Date.now();
+    const timeSinceLastCall = now - lastTTSCall;
 
+    // Try OpenAI TTS if not rate limited
+    if (timeSinceLastCall >= TTS_RATE_LIMIT) {
+      try {
+        const apiBaseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
+        
+        // Pass voice and speed preferences
+        const voice = userSettings?.tts?.voice || 'nova';
+        const speed = userSettings?.tts?.speed || 0.95;
+        
+        const response = await fetch(`${apiBaseUrl}/speech/tts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            text,
+            voice,  // Pass user's voice preference
+            speed   // Pass user's speed preference
+          }),
+        });
+
+        if (response.ok) {
+          const audioBlob = await response.blob();
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+
+          audio.onended = () => {
+            setIsSpeaking(false);
+            URL.revokeObjectURL(audioUrl);
+          };
+
+          await audio.play();
+          lastTTSCall = now;
+          return;
+        }
+      } catch (error) {
+        console.warn('OpenAI TTS failed, falling back to browser TTS:', error);
+      }
+    }
+
+    // Fallback to browser TTS
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Apply user settings
+    utterance.rate = userSettings?.tts?.speed || 0.9;
+    utterance.pitch = 1.0;
+    utterance.volume = 0.8;
+
+    // Try to use a natural voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(
+      voice => voice.name.includes('Natural') || voice.name.includes('Premium')
+    );
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    window.speechSynthesis.speak(utterance);
   } catch (error) {
-    console.error('OpenAI TTS failed, using browser fallback:', error);
-    speakWithBrowserTTS(text, setSpeakingState);
+    console.error('Error with text-to-speech:', error);
+    setIsSpeaking(false);
   }
-}
-
-/**
- * Browser-based text-to-speech fallback
- */
-function speakWithBrowserTTS(text, setSpeakingState) {
-  if (!('speechSynthesis' in window)) {
-    console.warn('Speech synthesis not supported');
-    setSpeakingState(false);
-    return;
-  }
-
-  setSpeakingState(true);
-  window.speechSynthesis.cancel(); // Cancel any ongoing speech
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  
-  // Configure for natural, calming speech
-  utterance.rate = 0.9;
-  utterance.pitch = 1.0;
-  utterance.volume = 0.8;
-
-  // Select best available voice
-  const voices = window.speechSynthesis.getVoices();
-  const preferredVoice = voices.find(voice => 
-    voice.name.includes('Natural') || 
-    voice.name.includes('Premium') ||
-    voice.name.includes('Enhanced')
-  );
-  
-  if (preferredVoice) {
-    utterance.voice = preferredVoice;
-  }
-
-  utterance.onend = () => setSpeakingState(false);
-  utterance.onerror = () => setSpeakingState(false);
-
-  window.speechSynthesis.speak(utterance);
 }
 
 /**
  * Stop any ongoing speech
  */
-export function stopSpeech(setSpeakingState) {
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
-  }
-  setSpeakingState(false);
+export function stopSpeech() {
+  window.speechSynthesis.cancel();
 }

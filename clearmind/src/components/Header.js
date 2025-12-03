@@ -1,51 +1,63 @@
 import React from 'react';
-import { Trash2, Settings, Calendar, Check } from 'lucide-react';
+import { RefreshCcw, Settings, Trash2, Calendar as CalendarIcon } from 'lucide-react';
 
 export default function Header({ 
   clearChat, 
   toggleSettings, 
-  toggleCalendar,
-  showCalendar,
-  showSettings,
-  hasCalendarAccess 
+  toggleCalendar, 
+  showCalendar, 
+  showSettings, 
+  hasCalendarAccess,
+  onRefreshCalendar 
 }) {
   return (
-    <header className="bg-gradient-to-r from-purple-600 to-pink-500 p-4 shadow-lg">
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="bg-white rounded-full p-2 w-12 h-12 flex items-center justify-center flex-shrink-0">
-            <span className="text-2xl">🧠</span>
+    <header className="bg-gray-800 border-b border-gray-700 p-4">
+      <div className="max-w-6xl mx-auto flex items-center justify-between">
+        {/* Logo and title */}
+        <div className="flex items-center gap-2 md:gap-3">
+          <div className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-full flex items-center justify-center flex-shrink-0">
+            <span className="text-xl md:text-2xl">🧠</span>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">ClearMind AI</h1>
-            <p className="text-sm text-purple-100">Your empathetic assistant</p>
+            <h1 className="text-lg md:text-xl font-bold">ClearMind AI</h1>
+            <p className="text-xs md:text-sm text-gray-400 hidden sm:block">
+              Your Sandwich Generation Assistant
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Action buttons */}
+        <div className="flex items-center gap-1 md:gap-2">
+          {/* Refresh Calendar Button */}
+          {hasCalendarAccess && (
+            <button
+              onClick={onRefreshCalendar}
+              className="p-2 rounded-lg hover:bg-gray-700 transition"
+              title="Refresh calendar events"
+            >
+              <RefreshCcw size={18} className="text-lg md:text-xl" />
+            </button>
+          )}
+          
           <button
             onClick={toggleCalendar}
-            className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${
-              showCalendar 
-                ? 'bg-white text-purple-600' 
-                : 'bg-purple-700 hover:bg-purple-800 text-white'
+            className={`p-2 rounded-lg transition flex items-center gap-1 md:gap-2 ${
+              showCalendar ? 'bg-white text-gray-900' : 'hover:bg-gray-700'
             }`}
-            title={hasCalendarAccess ? 'View Calendar' : 'Connect Calendar'}
+            title="Calendar"
           >
-            <Calendar size={20} />
-            {hasCalendarAccess && <Check size={16} className="text-green-500" />}
+            <CalendarIcon size={18} className="md:w-5 md:h-5" />
+            {hasCalendarAccess && <span className="text-xs">✓</span>}
           </button>
 
           <button
             onClick={toggleSettings}
-            className={`p-2 rounded-lg transition-colors ${
-              showSettings 
-                ? 'bg-white text-purple-600' 
-                : 'bg-purple-700 hover:bg-purple-800 text-white'
+            className={`p-2 rounded-lg transition ${
+              showSettings ? 'bg-white text-gray-900' : 'hover:bg-gray-700'
             }`}
             title="Settings"
           >
-            <Settings size={20} />
+            <Settings size={18} className="md:w-5 md:h-5" />
           </button>
 
           <button
@@ -53,7 +65,7 @@ export default function Header({
             className="p-2 bg-red-500 hover:bg-red-600 rounded-lg transition-colors text-white"
             title="Clear conversation"
           >
-            <Trash2 size={20} />
+            <Trash2 size={18} />
           </button>
         </div>
       </div>

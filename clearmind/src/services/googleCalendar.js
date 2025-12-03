@@ -1,19 +1,74 @@
-/**
- * Google Calendar API Integration
- * Handles fetching, creating, updating, and deleting calendar events
- */
-
 const CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3';
 
+const USER_TIMEZONE = 'America/New_York'; // Should match backend
+
 /**
- * Fetch all calendar events from the user's primary calendar
- * @param {string} accessToken - Google OAuth access token
- * @returns {Array} Array of calendar events
+ * Get current date in user's timezone (not UTC)
  */
+function getCurrentDateInTimezone() {
+  const now = new Date();
+  // Get date string in user's timezone
+  const dateStr = now.toLocaleDateString('en-US', { 
+    timeZone: USER_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  return dateStr; // Returns "MM/DD/YYYY"
+}
+
+/**
+ * Check if a date is "today" in user's timezone
+ */
+function isToday(dateStr) {
+  const today = getCurrentDateInTimezone();
+  const eventDate = new Date(dateStr).toLocaleDateString('en-US', {
+    timeZone: USER_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  return today === eventDate;
+}
+
+/**
+ * Check if a date is "tomorrow" in user's timezone
+ */
+function isTomorrow(dateStr) {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  const tomorrowStr = tomorrow.toLocaleDateString('en-US', {
+    timeZone: USER_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  const eventDate = new Date(dateStr).toLocaleDateString('en-US', {
+    timeZone: USER_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  return tomorrowStr === eventDate;
+}
+
 export async function fetchCalendarEvents(accessToken) {
   try {
+    // Get events starting from now
+    const now = new Date();
+    const timeMin = now.toISOString();
+    
+    console.log('=== Fetching Google Calendar Events ===');
+    console.log('Current time (UTC):', now.toISOString());
+    console.log('Current time (local):', now.toLocaleString('en-US', { timeZone: USER_TIMEZONE }));
+    console.log('Current date in timezone:', getCurrentDateInTimezone());
+    
     const response = await fetch(
-      `${CALENDAR_API_BASE}/calendars/primary/events?maxResults=100&orderBy=startTime&singleEvents=true&timeMin=${new Date().toISOString()}`,
+      `${CALENDAR_API_BASE}/calendars/primary/events?maxResults=100&orderBy=startTime&singleEvents=true&timeMin=${timeMin}`,
       {
         method: 'GET',
         headers: {
@@ -28,15 +83,41 @@ export async function fetchCalendarEvents(accessToken) {
 
     const data = await response.json();
     
-    // Transform Google Calendar format to our app format
-    return data.items?.map(event => ({
-      id: event.id,
-      title: event.summary,
-      description: event.description || '',
-      start: new Date(event.start.dateTime || event.start.date),
-      end: new Date(event.end.dateTime || event.end.date),
-      location: event.location || '',
-    })) || [];
+    console.log('Total events from Google:', data.items?.length || 0);
+    
+    const events = data.items?.map(event => {
+      // Use dateTime if available, otherwise use date (all-day events)
+      const startDateTime = event.start.dateTime || event.start.date;
+      const endDateTime = event.end.dateTime || event.end.date;
+      
+      const eventDate = new Date(startDateTime);
+      const eventDateLocal = eventDate.toLocaleString('en-US', { timeZone: USER_TIMEZONE });
+      
+      let dayLabel = '';
+      if (isToday(startDateTime)) {
+        dayLabel = ' (TODAY)';
+      } else if (isTomorrow(startDateTime)) {
+        dayLabel = ' (TOMORROW)';
+      }
+      
+      console.log(`  "${event.summary}"`);
+      console.log(`    ISO: ${startDateTime}`);
+      console.log(`    Local: ${eventDateLocal}${dayLabel}`);
+      
+      return {
+        id: event.id,
+        title: event.summary,
+        description: event.description || '',
+        start: startDateTime, // Keep as ISO string with timezone
+        end: endDateTime,
+        location: event.location || '',
+      };
+    }) || [];
+    
+    console.log('Transformed events:', events.length);
+    console.log('=======================================');
+    
+    return events;
 
   } catch (error) {
     console.error('Error fetching calendar events:', error);
@@ -44,12 +125,6 @@ export async function fetchCalendarEvents(accessToken) {
   }
 }
 
-/**
- * Create a new calendar event
- * @param {string} accessToken - Google OAuth access token
- * @param {Object} eventData - Event data with summary, description, start, end
- * @returns {Object} Created event data
- */
 export async function createCalendarEvent(accessToken, eventData) {
   try {
     const event = {
@@ -57,11 +132,11 @@ export async function createCalendarEvent(accessToken, eventData) {
       description: eventData.description || '',
       start: {
         dateTime: eventData.start,
-        timeZone: 'America/New_York', // Adjust as needed
+        timeZone: USER_TIMEZONE,
       },
       end: {
         dateTime: eventData.end,
-        timeZone: 'America/New_York', // Adjust as needed
+        timeZone: USER_TIMEZONE,
       },
     };
 
@@ -78,37 +153,28 @@ export async function createCalendarEvent(accessToken, eventData) {
     );
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Failed to create event: ${errorData.error?.message || response.status}`);
+      throw new Error(`Failed to create event: ${response.status}`);
     }
 
     return await response.json();
-
   } catch (error) {
     console.error('Error creating calendar event:', error);
     throw error;
   }
 }
 
-/**
- * Update an existing calendar event
- * @param {string} accessToken - Google OAuth access token
- * @param {string} eventId - ID of the event to update
- * @param {Object} updatedData - Updated event data
- * @returns {Object} Updated event data
- */
-export async function updateCalendarEvent(accessToken, eventId, updatedData) {
+export async function updateCalendarEvent(accessToken, eventId, eventData) {
   try {
     const event = {
-      summary: updatedData.summary,
-      description: updatedData.description || '',
+      summary: eventData.summary,
+      description: eventData.description || '',
       start: {
-        dateTime: updatedData.start,
-        timeZone: 'America/New_York',
+        dateTime: eventData.start,
+        timeZone: USER_TIMEZONE,
       },
       end: {
-        dateTime: updatedData.end,
-        timeZone: 'America/New_York',
+        dateTime: eventData.end,
+        timeZone: USER_TIMEZONE,
       },
     };
 
@@ -129,18 +195,12 @@ export async function updateCalendarEvent(accessToken, eventId, updatedData) {
     }
 
     return await response.json();
-
   } catch (error) {
     console.error('Error updating calendar event:', error);
     throw error;
   }
 }
 
-/**
- * Delete a calendar event
- * @param {string} accessToken - Google OAuth access token
- * @param {string} eventId - ID of the event to delete
- */
 export async function deleteCalendarEvent(accessToken, eventId) {
   try {
     const response = await fetch(
@@ -153,12 +213,11 @@ export async function deleteCalendarEvent(accessToken, eventId) {
       }
     );
 
-    if (!response.ok && response.status !== 204) {
+    if (!response.ok) {
       throw new Error(`Failed to delete event: ${response.status}`);
     }
 
     return true;
-
   } catch (error) {
     console.error('Error deleting calendar event:', error);
     throw error;

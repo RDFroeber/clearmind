@@ -1,8 +1,14 @@
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
+import { USER_TIMEZONE } from '../config/timezone.js';
+
 dotenv.config();
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ 
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: 10000,
+  maxRetries: 2
+});
 
 const EMPATHY_SYSTEM_PROMPT = `You are a supportive AI assistant helping someone from the "Sandwich Generation" - adults caring for aging parents while raising their own children.
 
@@ -14,31 +20,54 @@ Your role:
 - Be warm but professional`;
 
 /**
- * Analyzes text to determine if it contains calendar event information
- * Now detects MULTIPLE events in a single message
+ * OPTIMIZED: Combined intent analysis and event extraction in ONE API call
  */
-export async function analyzeIntent(text) {
+export async function analyzeAndExtractEvents(text) {
   try {
-    const prompt = `Analyze this text and determine the user's intent:
+    const now = new Date();
+    const currentDateTime = now.toLocaleString('en-US', { timeZone: USER_TIMEZONE });
+    const prompt = `Analyze this text and extract calendar information in ONE response.
 
 Text: "${text}"
+Current date/time: ${currentDateTime} (${USER_TIMEZONE})
+Current date/time (ISO): ${now.toISOString()}
 
-Respond with ONLY valid JSON in this format:
+Respond with ONLY valid JSON:
 {
   "intent": "event" | "vent" | "question" | "unclear",
   "confidence": 0.0-1.0,
-  "reasoning": "brief explanation",
   "hasCalendarData": true | false,
-  "eventCount": 0
+  "events": [
+    {
+      "summary": "Event title",
+      "description": "Optional description",
+      "start": "ISO 8601 datetime",
+      "end": "ISO 8601 datetime",
+      "isFlexible": true | false
+    }
+  ]
 }
 
 Intent definitions:
-- "event": User wants to schedule/manage calendar event(s)
-- "vent": User is expressing stress/frustration and needs empathy
-- "question": User is asking for advice or information
-- "unclear": Cannot determine intent
+- "event": User wants to schedule calendar events
+- "vent": User expressing stress/frustration
+- "question": User asking for advice
+- "unclear": Cannot determine
 
-IMPORTANT: Set eventCount to the NUMBER of distinct events mentioned (e.g., 2 if they mention "dentist at 2pm and pickup kids at 3pm")`;
+Rules for event extraction:
+- Extract ALL events mentioned in the text
+- Use ISO 8601 format with timezone: "2025-12-03T16:00:00-05:00"
+- Default to 30-minute duration if not specified
+- Calculate relative dates (tomorrow = ${new Date(Date.now() + 86400000).toISOString().split('T')[0]})
+- Default to 9:00 AM if time not specified
+- Use Eastern timezone (-05:00)
+- Set isFlexible to true for vague times ("sometime", "later", "afternoon")
+- For sequential events like "do X then Y", schedule Y after X with buffer time
+
+Examples:
+- "pick up kids at 4pm" → one event at 4pm
+- "meeting at 2 then lunch" → two events, lunch after meeting
+- "groceries tomorrow" → one event tomorrow at 9am (flexible)`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -52,15 +81,95 @@ IMPORTANT: Set eventCount to the NUMBER of distinct events mentioned (e.g., 2 if
       .replace(/```\n?/g, '')
       .trim();
     
-    return JSON.parse(cleanedText);
+    const result = JSON.parse(cleanedText);
+    
+    console.log('Parsed result:', JSON.stringify(result, null, 2));
+    
+    return result;
   } catch (error) {
-    console.error('Error analyzing intent:', error);
+    console.error('Error analyzing and extracting events:', error);
     return {
       intent: 'unclear',
       confidence: 0,
-      reasoning: 'Analysis failed',
       hasCalendarData: false,
-      eventCount: 0
+      events: []
+    };
+  }
+}
+
+/**
+ * SIMPLIFIED: Faster conflict checking
+ */
+export async function quickConflictCheck(newEvents, existingEvents) {
+  try {
+    if (!existingEvents || existingEvents.length === 0) {
+      return {
+        events: newEvents.map(e => ({ ...e, hasConflict: false })),
+        summary: 'No existing events'
+      };
+    }
+
+    const relevantEvents = existingEvents.filter(event => {
+      const eventStart = new Date(event.start);
+      const now = new Date();
+      return eventStart >= now;
+    });
+
+    if (relevantEvents.length === 0) {
+      return {
+        events: newEvents.map(e => ({ ...e, hasConflict: false })),
+        summary: 'No relevant existing events'
+      };
+    }
+
+    const prompt = `Check conflicts between NEW and EXISTING events.
+
+EXISTING: ${JSON.stringify(relevantEvents.map(e => ({ title: e.title, start: e.start, end: e.end })))}
+NEW: ${JSON.stringify(newEvents.map(e => ({ summary: e.summary, start: e.start, end: e.end })))}
+
+Return ONLY valid JSON:
+{
+  "events": [
+    {
+      "summary": "Event name",
+      "start": "ISO datetime",
+      "end": "ISO datetime", 
+      "hasConflict": true or false,
+      "conflictsWith": "existing event name or null"
+    }
+  ]
+}
+
+Rules: 
+- Flag hasConflict=true ONLY if NEW event overlaps with EXISTING event
+- DO NOT flag if two NEW events overlap with each other
+- If no overlap with existing events, hasConflict=false`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+      max_tokens: 500,
+    });
+
+    const responseText = completion.choices[0].message.content.trim();
+    const cleanedText = responseText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+    
+    const result = JSON.parse(cleanedText);
+    
+    return {
+      events: result.events || newEvents.map(e => ({ ...e, hasConflict: false })),
+      summary: 'Conflict check complete'
+    };
+    
+  } catch (error) {
+    console.error('Error checking conflicts:', error);
+    return {
+      events: newEvents.map(e => ({ ...e, hasConflict: false })),
+      summary: 'Conflict check skipped'
     };
   }
 }
@@ -70,24 +179,21 @@ IMPORTANT: Set eventCount to the NUMBER of distinct events mentioned (e.g., 2 if
  */
 export async function analyzeDeleteIntent(text) {
   try {
-    const prompt = `Analyze this text to determine if the user wants to delete/cancel calendar events.
+    const prompt = `Analyze if user wants to delete/cancel calendar events.
 
 Text: "${text}"
 
-Respond with ONLY valid JSON in this format:
+Respond with ONLY valid JSON:
 {
   "isDeleteRequest": true or false,
-  "eventToDelete": "name or description of event to delete",
+  "eventToDelete": "name of event to delete",
   "confidence": 0.0-1.0
 }
 
 Examples of delete requests:
 - "Cancel my dentist appointment"
 - "Delete the meeting at 2pm"
-- "Remove pickup kids from my calendar"
-- "I don't need the call with mom anymore"
-
-If the text is asking to delete/cancel/remove an event, set isDeleteRequest to true.`;
+- "Remove pickup kids"`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -113,155 +219,186 @@ If the text is asking to delete/cancel/remove an event, set isDeleteRequest to t
 }
 
 /**
- * Extracts MULTIPLE calendar events from text
- * Returns an array of event objects
+ * Determines if a query would benefit from calendar context
+ * Returns true for schedule-related questions, false for general venting
  */
-export async function extractMultipleEvents(text) {
-  try {
-    const prompt = `Extract ALL calendar events from this text and return ONLY valid JSON:
-
-Text: "${text}"
-Current date/time: ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}
-
-Return this exact format (an ARRAY of events):
-[
-  {
-    "summary": "Event title",
-    "description": "Optional description or empty string",
-    "start": "ISO 8601 datetime string",
-    "end": "ISO 8601 datetime string",
-    "isFlexible": true or false
+/**
+ * Determines if a query would benefit from calendar context
+ * Returns true for schedule-related questions, false for general venting
+ */
+export function shouldUseCalendarContext(text) {
+  const lowerText = text.toLowerCase().trim();
+  // Explicit schedule keywords
+  const scheduleKeywords = [
+    'busy', 'schedule', 'appointment', 'appointments', 'free', 'available',
+    'calendar', 'planned', 'booked', 'meeting', 'meetings', 'event', 'events',
+    'gap', 'time for', 'fit in', 'room for', 'open'
+  ];
+  // Time-related keywords that often indicate schedule queries
+  const timeKeywords = [
+    'today', 'tomorrow', 'tonight', 'this week', 'next week',
+    'this morning', 'this afternoon', 'this evening',
+    'morning', 'afternoon', 'evening', 'night',
+    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+  ];
+  // Question words that combined with time/schedule indicate a schedule query
+  const questionWords = ['what', 'when', 'how', 'do i', 'am i', 'can i', 'could i'];
+  // Check for explicit schedule keywords
+  const hasScheduleKeyword = scheduleKeywords.some(keyword => lowerText.includes(keyword));
+  // Check for time keywords
+  const hasTimeKeyword = timeKeywords.some(keyword => lowerText.includes(keyword));
+  // Check for question patterns about schedule
+  const hasQuestionWord = questionWords.some(word => lowerText.includes(word));
+  // Common schedule query patterns
+  const schedulePatterns = [
+    // "What do I have..." / "What's on my..."
+    /what.*(do i have|on my|is my|are my)/,
+    // "Am I free..." / "Am I busy..." / "Am I available..."
+    /am i.*(free|busy|available|open)/,
+    // "Do I have..." / "Do I have any..."
+    /do i have.*(any|time|room)/,
+    // "When am I..." / "When can I..."
+    /when.*(am i|can i|could i|do i)/,
+    // "How busy..." / "How many..."
+    /how.*(busy|many|much)/,
+    // "Can I fit..." / "Can I schedule..." / "Can I add..."
+    /can i.*(fit|schedule|add|squeeze)/,
+    // "Show me..." / "Tell me..." with time/schedule words
+    /(show|tell|give).*(me|my).*(schedule|calendar|appointments|events)/,
+  ];
+  const matchesPattern = schedulePatterns.some(pattern => pattern.test(lowerText));
+  
+  // Decision logic:
+  // 1. Explicit schedule keyword = YES
+  // 2. Question word + time keyword = YES (e.g., "what tomorrow")
+  // 3. Matches a schedule pattern = YES
+  // 4. Has time keyword but no question = MAYBE (could be "tomorrow is busy" = venting)
+  
+  if (hasScheduleKeyword) {
+    console.log('✓ Schedule context: Has schedule keyword');
+    return true;
   }
-]
-
-Rules:
-- Return an ARRAY even if there's only one event: [{ ... }]
-- Use ISO 8601 format with timezone: "2025-12-02T15:00:00-05:00"
-- Default to 30-minute duration if not specified
-- If date is relative (tomorrow, next week), calculate from current date
-- If time is not specified, use 9:00 AM as default
-- Use Eastern timezone (-05:00) as default
-- Extract EVERY event mentioned
-- Set isFlexible to true if time is vague (e.g., "sometime today", "afternoon") or false if specific (e.g., "2pm", "5:00")`;
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-    });
-
-    const responseText = completion.choices[0].message.content.trim();
-    const cleanedText = responseText
-      .replace(/```json\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
-    
-    const events = JSON.parse(cleanedText);
-    
-    // Ensure we always return an array
-    return Array.isArray(events) ? events : [events];
-    
-  } catch (error) {
-    console.error('Error extracting event data:', error);
-    throw new Error('Failed to extract event information');
+  
+  if (matchesPattern) {
+    console.log('✓ Schedule context: Matches schedule pattern');
+    return true;
   }
+  
+  if (hasQuestionWord && hasTimeKeyword) {
+    console.log('✓ Schedule context: Question + time keyword');
+    return true;
+  }
+  
+  // Time keyword alone is not enough (could be venting)
+  console.log('✗ No schedule context: General statement or venting');
+  return false;
 }
 
 /**
- * Analyzes existing calendar and checks for conflicts
- * Does NOT automatically reschedule - prompts user instead
+ * Generates empathetic response with optional calendar context
+ * Calendar context only included when query is about scheduling
  */
-export async function optimizeEventScheduling(newEvents, existingEvents) {
+export async function generateEmpatheticResponse(text, conversationHistory = [], calendarContext = null, userSettings = null) {
   try {
-    // Filter to only today and future events
-    const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-    const relevantEvents = existingEvents.filter(event => {
-      const eventStart = new Date(event.start);
-      return eventStart >= now;
-    });
+    console.log('\n=== Generating Empathy Response ===');
+    console.log('Text:', text);
+    console.log('Calendar context received?', !!calendarContext);
 
-    const prompt = `You are a smart scheduling assistant. Analyze this calendar for conflicts.
+    // Extract empathy settings
+    const empathyLevel = userSettings?.level || 'balanced';
+    const tone = userSettings?.tone || 'professional';
+    console.log('Empathy settings:', { empathyLevel, tone });
+    
+    // Adjust system prompt based on settings
+    const empathyDescriptions = {
+      minimal: 'Be concise and direct. Keep responses to 1-2 sentences. Focus on actionable information.',
+      balanced: 'Keep responses concise (2-3 sentences) while being supportive. Balance empathy with efficiency.',
+      high: 'Show deep understanding and warmth. Take time to validate feelings (3-4 sentences). Offer emotional support alongside practical help.'
+    };
+    
+    const toneDescriptions = {
+      professional: 'Be warm but professional. Use clear, respectful language.',
+      friendly: 'Be casual and approachable. Use conversational language.',
+      warm: 'Be caring and personal. Use gentle, compassionate language.'
+    };
+    
+    let systemPrompt = `You are a supportive AI assistant helping someone from the "Sandwich Generation" - adults caring for aging parents while raising their own children.
 
-EXISTING CALENDAR EVENTS:
-${JSON.stringify(relevantEvents, null, 2)}
-
-NEW EVENTS TO SCHEDULE:
-${JSON.stringify(newEvents, null, 2)}
-
-Current date/time: ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}
-
-Check for conflicts but DO NOT automatically reschedule events. Return ONLY valid JSON:
-{
-  "events": [
-    {
-      "summary": "Event title",
-      "description": "Description",
-      "start": "ISO 8601 datetime string (KEEP ORIGINAL TIME)",
-      "end": "ISO 8601 datetime string",
-      "hasConflict": true or false,
-      "conflictDetails": {
-        "conflictsWith": "Name of conflicting event",
-        "conflictTime": "Time range of conflict",
-        "suggestedAlternatives": [
-          {
-            "time": "ISO 8601 datetime",
-            "reason": "Why this time works"
-          }
-        ]
-      }
+Your role:
+- Listen with empathy and validate their feelings
+- ${empathyDescriptions[empathyLevel]}
+- ${toneDescriptions[tone]}
+- Offer actionable next steps only when appropriate
+- Recognize when they just need to vent vs. need help`;
+    
+    if (calendarContext) {
+      console.log('Calendar context structure:', JSON.stringify(calendarContext, null, 2));
+      console.log('Has events?', calendarContext.events && calendarContext.events.length > 0);
+      console.log('Is empty?', calendarContext.isEmpty);
     }
-  ],
-  "summary": "Brief summary of conflicts found"
-}
 
-RULES:
-1. KEEP the original requested time for all events - do NOT change them
-2. Check if new event times overlap with existing events
-3. Two events conflict if their time ranges overlap
-4. For flexible events (isFlexible: true), suggest 2-3 alternative times
-5. For fixed events (isFlexible: false), note the conflict but keep the original time
-6. Suggest alternatives in available time slots with 30-min buffers
-7. Consider business hours (9am-6pm) for alternatives`;
+    // Add calendar context only if provided AND has data
+    if (calendarContext) {
+      const currentDate = calendarContext.currentDate || 'today';
+      const timeRange = calendarContext.timeRange || 'upcoming';
+      
+      console.log('Processing calendar context...');
+      console.log('  Current date:', currentDate);
+      console.log('  Time range:', timeRange);
+      console.log('  Is empty:', calendarContext.isEmpty);
+      console.log('  Event count:', calendarContext.count);
+      
+      systemPrompt += `\n\n=== CALENDAR ACCESS ===`;
+      systemPrompt += `\nCurrent date/time: ${currentDate}`;
+      systemPrompt += `\nUser asked about: ${timeRange}`;
+      
+      if (calendarContext.isEmpty || !calendarContext.events || calendarContext.events.length === 0) {
+        console.log('  Adding EMPTY calendar message');
+        systemPrompt += `\n\nIMPORTANT: The user has NO events scheduled for ${timeRange}.`;
+        systemPrompt += `\nResult: ZERO events found. The calendar is EMPTY for ${timeRange}.`;
+        systemPrompt += `\n\nYou MUST respond with something like:`;
+        systemPrompt += `\n- "You're free ${timeRange}! No events scheduled."`;
+        systemPrompt += `\n- "Your calendar is clear for ${timeRange}."`;
+        systemPrompt += `\n- "Good news - nothing scheduled ${timeRange}!"`;
+        systemPrompt += `\n\nDO NOT say you don't have access. You DO have access and found zero events.`;
+      } else {
+        console.log('  Adding event list to prompt');
+        systemPrompt += `\n\nUser's calendar for ${timeRange}:`;
+        
+        calendarContext.events.forEach((e, i) => {
+          const time = new Date(e.start).toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            timeZone: 'America/New_York'
+          });
+          const eventLine = `\n${i + 1}. "${e.title}" on ${e.dayOfWeek}, ${e.date} at ${time}`;
+          systemPrompt += eventLine;
+          console.log('  Event added:', eventLine.trim());
+        });
+        
+        systemPrompt += `\n\nThese are ALL the events for ${timeRange}. There are ${calendarContext.events.length} event${calendarContext.events.length !== 1 ? 's' : ''} total.`;
+      }
+      
+      systemPrompt += `\n\nRULES:`;
+      systemPrompt += `\n- You HAVE calendar access for ${timeRange}`;
+      systemPrompt += `\n- List the events shown above`;
+      systemPrompt += `\n- If no events are listed, say they are free`;
+      systemPrompt += `\n- DO NOT invent events not listed`;
+      systemPrompt += `\n- DO NOT say you don't have access`;
+      
+    } else {
+      console.log('NO calendar context provided');
+      systemPrompt += `\n\nYou do NOT have access to the user's calendar. DO NOT make up or mention specific appointments, times, or events. Only acknowledge what the user explicitly tells you.`;
+    }
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-      max_tokens: 2000,
-    });
-
-    const responseText = completion.choices[0].message.content.trim();
-    const cleanedText = responseText
-      .replace(/```json\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
-    
-    return JSON.parse(cleanedText);
-    
-  } catch (error) {
-    console.error('Error checking schedule conflicts:', error);
-    throw new Error('Failed to check schedule conflicts');
-  }
-}
-
-/**
- * Legacy function - extracts single event (kept for backward compatibility)
- */
-export async function extractEventData(text) {
-  const events = await extractMultipleEvents(text);
-  return events[0]; // Return first event
-}
-
-/**
- * Generates empathetic response to user's message
- */
-export async function generateEmpatheticResponse(text, conversationHistory = []) {
-  try {
     const messages = [
-      { role: 'system', content: EMPATHY_SYSTEM_PROMPT },
-      ...conversationHistory,
+      { role: 'system', content: systemPrompt },
+      ...conversationHistory.slice(-10),
       { role: 'user', content: text }
     ];
+
+    console.log('Calling OpenAI with', messages.length, 'messages');
+    console.log('User message:', text);
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -270,7 +407,11 @@ export async function generateEmpatheticResponse(text, conversationHistory = [])
       max_tokens: 150,
     });
 
-    return completion.choices[0].message.content.trim();
+    const response = completion.choices[0].message.content.trim();
+    console.log('AI Response:', response);
+    console.log('===================================\n');
+    
+    return response;
   } catch (error) {
     console.error('Error generating response:', error);
     throw new Error('Failed to generate response');
@@ -280,13 +421,16 @@ export async function generateEmpatheticResponse(text, conversationHistory = [])
 /**
  * Generates audio from text using OpenAI TTS
  */
-export async function generateSpeech(text) {
+/**
+ * Generates audio from text using OpenAI TTS
+ */
+export async function generateSpeech(text, voice = 'nova', speed = 0.95) {
   try {
     const mp3 = await openai.audio.speech.create({
       model: 'tts-1',
-      voice: 'nova',
+      voice: voice, // Use provided voice
       input: text.slice(0, 4096),
-      speed: 0.95,
+      speed: speed, // Use provided speed
     });
 
     return Buffer.from(await mp3.arrayBuffer());

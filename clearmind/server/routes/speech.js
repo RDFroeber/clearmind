@@ -1,66 +1,19 @@
 import express from 'express';
 import {
-  analyzeIntent,
+  analyzeAndExtractEvents,
+  quickConflictCheck,
   analyzeDeleteIntent,
-  extractMultipleEvents,
-  optimizeEventScheduling,
   generateEmpatheticResponse,
+  shouldUseCalendarContext,
   generateSpeech
 } from '../services/openaiService.js';
+import {
+  formatDateTime,
+  findMatchingEvents,
+  buildCalendarContext
+} from '../utils/dates.js';
 
 const router = express.Router();
-
-/**
- * Helper function to format datetime for confirmation message
- */
-function formatDateTime(isoString) {
-  try {
-    const eventDate = new Date(isoString);
-    const now = new Date();
-    
-    const eventDay = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    let dayLabel;
-    if (eventDay.getTime() === today.getTime()) {
-      dayLabel = 'today';
-    } else if (eventDay.getTime() === tomorrow.getTime()) {
-      dayLabel = 'tomorrow';
-    } else {
-      dayLabel = eventDate.toLocaleString('en-US', {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric'
-      });
-    }
-    
-    const timeString = eventDate.toLocaleString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit'
-    });
-    
-    return `${dayLabel} at ${timeString}`;
-  } catch (error) {
-    return 'the scheduled time';
-  }
-}
-
-/**
- * Helper function to find matching events by name/description
- */
-function findMatchingEvents(eventToDelete, existingEvents) {
-  const searchTerm = eventToDelete.toLowerCase();
-  
-  return existingEvents.filter(event => {
-    const title = (event.title || '').toLowerCase();
-    const description = (event.description || '').toLowerCase();
-    
-    // Check if search term is in title or description
-    return title.includes(searchTerm) || description.includes(searchTerm);
-  });
-}
 
 /**
  * POST /api/speech/process
@@ -77,14 +30,14 @@ router.post('/process', async (req, res) => {
     }
 
     console.log(`Processing text: "${text}"`);
-    console.log(`Existing events count: ${existingEvents.length}`);
+    console.time('Total processing time'); // Add timing
 
-    // Check if this is a delete request first
+    // OPTIMIZATION 1: Check delete intent first (fast, simple check)
     const deleteAnalysis = await analyzeDeleteIntent(text);
-    console.log('Delete analysis:', deleteAnalysis);
-
+    
     if (deleteAnalysis.isDeleteRequest && deleteAnalysis.confidence > 0.6) {
-      // User wants to delete an event
+      console.timeEnd('Total processing time');
+      
       const matchingEvents = findMatchingEvents(deleteAnalysis.eventToDelete, existingEvents);
       
       if (matchingEvents.length === 0) {
@@ -95,7 +48,6 @@ router.post('/process', async (req, res) => {
           requiresConfirmation: false
         });
       } else if (matchingEvents.length === 1) {
-        // One match - ask for confirmation
         const event = matchingEvents[0];
         return res.json({
           intent: 'delete',
@@ -104,7 +56,6 @@ router.post('/process', async (req, res) => {
           requiresConfirmation: true
         });
       } else {
-        // Multiple matches - ask which one
         const eventList = matchingEvents.slice(0, 3).map((e, i) => 
           `${i + 1}. "${e.title}" ${formatDateTime(e.start)}`
         ).join(', ');
@@ -118,13 +69,19 @@ router.post('/process', async (req, res) => {
       }
     }
 
-    // Not a delete request - proceed with normal flow
-    const intentAnalysis = await analyzeIntent(text);
-    console.log('Intent analysis:', intentAnalysis);
+    // OPTIMIZATION 2: Combined intent + event extraction (ONE API call instead of TWO)
+    console.time('Intent + extraction');
+    const analysis = await analyzeAndExtractEvents(text);
+    console.timeEnd('Intent + extraction');
+    
+    console.log('Analysis result:', analysis);
+    console.log('Intent:', analysis.intent);
+    console.log('Has calendar data:', analysis.hasCalendarData);
+    console.log('Events count:', analysis.events?.length || 0);
 
     let response = {
-      intent: intentAnalysis.intent,
-      confidence: intentAnalysis.confidence,
+      intent: analysis.intent,
+      confidence: analysis.confidence,
       text: '',
       eventData: null,
       eventsData: null,
@@ -134,20 +91,23 @@ router.post('/process', async (req, res) => {
       audioRequired: true
     };
 
-    if (intentAnalysis.intent === 'event' && intentAnalysis.hasCalendarData) {
+    if (analysis.intent === 'event' && analysis.hasCalendarData && analysis.events.length > 0) {
       // User wants to create event(s)
+      console.log('→ Going into EVENT handling path');
       try {
-        const events = await extractMultipleEvents(text);
-        console.log(`Extracted ${events.length} event(s):`, JSON.stringify(events, null, 2));
+        const events = analysis.events;
         
-        let optimizationResult = null;
+        // OPTIMIZATION 3: Only check conflicts if there are existing events
         let eventsWithConflicts = events;
         
         if (existingEvents && existingEvents.length > 0) {
-          console.log('Checking for schedule conflicts...');
-          optimizationResult = await optimizeEventScheduling(events, existingEvents);
-          eventsWithConflicts = optimizationResult.events;
-          console.log('Conflict check result:', JSON.stringify(optimizationResult, null, 2));
+          console.time('Conflict check');
+          const conflictResult = await quickConflictCheck(events, existingEvents);
+          eventsWithConflicts = conflictResult.events;
+          console.timeEnd('Conflict check');
+        } else {
+          // No existing events = no conflicts possible
+          eventsWithConflicts = events.map(e => ({ ...e, hasConflict: false }));
         }
         
         const validEvents = eventsWithConflicts.filter(e => e.summary && e.start && e.end);
@@ -168,23 +128,9 @@ router.post('/process', async (req, res) => {
             
             if (conflictingEvents.length === 1) {
               const conflict = conflictingEvents[0];
-              conflictMessage = `I found a conflict: "${conflict.summary}" ${formatDateTime(conflict.start)} overlaps with your existing "${conflict.conflictDetails.conflictsWith}". `;
-              
-              if (conflict.conflictDetails.suggestedAlternatives && conflict.conflictDetails.suggestedAlternatives.length > 0) {
-                const alternatives = conflict.conflictDetails.suggestedAlternatives
-                  .slice(0, 2)
-                  .map(alt => formatDateTime(alt.time))
-                  .join(' or ');
-                conflictMessage += `Would you like to schedule it at ${alternatives} instead, or should I keep it at the original time?`;
-              } else {
-                conflictMessage += `Would you like me to add it anyway, or should I cancel this event?`;
-              }
+              conflictMessage = `I found a conflict: "${conflict.summary}" ${formatDateTime(conflict.start)} overlaps with your existing "${conflict.conflictsWith}". Would you like me to add it anyway or cancel?`;
             } else {
-              conflictMessage = `I found ${conflictingEvents.length} conflicts with your existing schedule. `;
-              const conflictList = conflictingEvents
-                .map(e => `"${e.summary}" conflicts with "${e.conflictDetails.conflictsWith}"`)
-                .join(', ');
-              conflictMessage += `${conflictList}. Would you like me to suggest alternative times for these?`;
+              conflictMessage = `I found ${conflictingEvents.length} conflicts with your existing schedule. Would you like me to add them anyway?`;
             }
             
             if (nonConflictingEvents.length > 0) {
@@ -195,21 +141,14 @@ router.post('/process', async (req, res) => {
             response.eventsData = validEvents;
             
           } else {
+            // No conflicts - quick confirmation
             let confirmationMessage;
             
             if (validEvents.length === 1) {
               const event = validEvents[0];
               confirmationMessage = `I'll add "${event.summary}" to your calendar for ${formatDateTime(event.start)}.`;
             } else {
-              const eventSummaries = validEvents.slice(0, 3).map((e) => 
-                `"${e.summary}" ${formatDateTime(e.start)}`
-              ).join(', ');
-              
-              if (validEvents.length > 3) {
-                confirmationMessage = `I'll add ${validEvents.length} events to your calendar. First few: ${eventSummaries}, and ${validEvents.length - 3} more.`;
-              } else {
-                confirmationMessage = `I'll add ${validEvents.length} events to your calendar: ${eventSummaries}.`;
-              }
+              confirmationMessage = `I'll add ${validEvents.length} events to your calendar.`;
             }
 
             response.text = confirmationMessage;
@@ -224,10 +163,50 @@ router.post('/process', async (req, res) => {
         response.intent = 'unclear';
       }
     } else {
-      const empatheticResponse = await generateEmpatheticResponse(text, conversationHistory);
+      // User needs empathy, advice, or clarification
+      console.log('→ Going into EMPATHY response path');
+      
+      // Determine if we should include calendar context
+      const needsCalendarContext = shouldUseCalendarContext(text);
+      console.log('=== Calendar Context Detection ===');
+      console.log('Query:', text);
+      console.log('Needs calendar context:', needsCalendarContext);
+      console.log('Existing events count:', existingEvents?.length || 0);
+      
+      let calendarContext = null;
+      
+      if (needsCalendarContext) {
+        // Use helper function to build calendar context
+        console.log('✓ Building calendar context (even if no events)...');
+        // Pass existingEvents even if it's an empty array
+        calendarContext = buildCalendarContext(text, existingEvents || []);
+        
+        console.log('Calendar context built:', calendarContext ? 'YES' : 'NO');
+        if (calendarContext) {
+          console.log('  - Time range:', calendarContext.timeRange);
+          console.log('  - Is empty:', calendarContext.isEmpty);
+          console.log('  - Event count:', calendarContext.count);
+        }
+      } else {
+        console.log('Skipping calendar context:', {
+          needsCalendarContext,
+          hasEvents: !!(existingEvents && existingEvents.length > 0)
+        });
+      }
+      
+      console.log('Calendar context being passed to AI:', calendarContext ? 'YES' : 'NO');
+      console.log('===================================');
+      
+      const empatheticResponse = await generateEmpatheticResponse(
+        text, 
+        conversationHistory,
+        calendarContext  // ← This parameter must be here
+      );
+      console.timeEnd('Empathy response');
       response.text = empatheticResponse;
     }
 
+    console.timeEnd('Total processing time');
     res.json(response);
 
   } catch (error) {
@@ -243,17 +222,17 @@ router.post('/process', async (req, res) => {
  * POST /api/speech/tts
  * Generate text-to-speech audio
  */
+// TTS endpoint
 router.post('/tts', async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, voice = 'nova', speed = 0.95 } = req.body;
 
-    if (!text || typeof text !== 'string') {
-      return res.status(400).json({ 
-        error: 'Invalid request: text is required' 
-      });
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
     }
 
-    const audioBuffer = await generateSpeech(text);
+    console.log(`Generating TTS: voice=${voice}, speed=${speed}`);
+    const audioBuffer = await generateSpeech(text, voice, speed);
 
     res.set({
       'Content-Type': 'audio/mpeg',
@@ -261,9 +240,8 @@ router.post('/tts', async (req, res) => {
     });
 
     res.send(audioBuffer);
-
   } catch (error) {
-    console.error('Error generating TTS:', error);
+    console.error('Error generating speech:', error);
     res.status(500).json({ 
       error: 'Failed to generate speech',
       message: error.message 

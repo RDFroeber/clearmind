@@ -22,6 +22,15 @@ body {
   width: 100vw;
 }
 
+/* Mobile viewport height fix */
+@supports (-webkit-touch-callout: none) {
+  /* iOS Safari */
+  .h-screen {
+    height: -webkit-fill-available;
+  }
+}
+
+
 /* Custom scrollbar styles */
 ::-webkit-scrollbar {
   width: 8px;
@@ -151,4 +160,31 @@ body {
 
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-in-out;
+}
+
+/* Mobile touch improvements */
+@media (max-width: 640px) {
+  /* Increase touch target sizes */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Prevent text selection on buttons */
+  button {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  
+  /* Adjust padding for mobile */
+  .p-4 {
+    padding: 1rem;
+  }
+  
+  /* Make text slightly larger on mobile */
+  body {
+    font-size: 16px;
+  }
 }

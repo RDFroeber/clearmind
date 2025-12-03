@@ -26,7 +26,7 @@ ClearMind AI is a proactive mental load manager that:
 - Family coordination features
 
 ### Phase 3 (Future)
-- Family group scheduling
+- Family or Social group scheduling
 - Advanced sentiment analysis
 - Personalized stress management insights
 
