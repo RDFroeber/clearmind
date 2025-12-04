@@ -10,15 +10,6 @@ const openai = new OpenAI({
   maxRetries: 2
 });
 
-const EMPATHY_SYSTEM_PROMPT = `You are a supportive AI assistant helping someone from the "Sandwich Generation" - adults caring for aging parents while raising their own children.
-
-Your role:
-- Listen with empathy and validate their feelings
-- Keep responses concise (2-3 sentences) to avoid overwhelming them
-- Offer actionable next steps only when appropriate
-- Recognize when they just need to vent vs. when they need help
-- Be warm but professional`;
-
 /**
  * OPTIMIZED: Combined intent analysis and event extraction in ONE API call
  */
@@ -88,15 +79,23 @@ Rules for event extraction:
 - Default to 30-minute duration if not specified
 - For "today", use date: ${todayFormatted}
 - For "tomorrow", use date: ${tomorrowFormatted}
-- Default to 9:00 AM if time not specified
 - Use Eastern timezone (-05:00)
 - Set isFlexible to true for vague times ("sometime", "later", "afternoon")
 - For sequential events like "do X then Y", schedule Y after X with buffer time
 
+TIME PARSING (CRITICAL):
+- "11:00" or "11" without AM/PM → Assume 11:00 AM (11:00:00), NOT PM
+- "1:00" or "1" without AM/PM → Assume 1:00 PM (13:00:00) if after noon
+- Times 1-11 without AM/PM → Assume AM
+- Times 12 without AM/PM → Assume 12:00 PM (noon)
+- Only use PM times when explicitly stated or when context clearly indicates afternoon/evening
+- If no time specified, default to 9:00 AM
+
 Examples:
-- "pick up kids at 4pm" → one event at 4pm
-- "meeting at 2 then lunch" → two events, lunch after meeting
-- "groceries tomorrow" → one event tomorrow at 9am (flexible)`;
+- "add laundry at 11:00" → 11:00 AM (not 4:00 PM or 11:00 PM)
+- "pick up kids at 4pm" → 4:00 PM (16:00)
+- "meeting at 2 then lunch" → 2:00 PM and 3:00 PM
+- "groceries tomorrow" → tomorrow at 9:00 AM (flexible)`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -207,19 +206,84 @@ Rules:
  */
 export async function analyzeUpdateIntent(text, recentEvents = [], allEvents = []) {
   try {
+    const now = new Date();
+    
+    console.log('=== ANALYZE UPDATE INTENT - DATE CALCULATION ===');
+    console.log('Server time (now):', now);
+    console.log('Server time ISO:', now.toISOString());
+    
+    // Get today's date in Eastern timezone properly
+    const easternTimeStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+    const easternDate = new Date(easternTimeStr);
+    
+    console.log('Eastern time string:', easternTimeStr);
+    console.log('Eastern date object:', easternDate);
+    
+    // Extract just the date part in Eastern timezone
+    const todayFormatted = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(now);
+    
+    // Convert MM/DD/YYYY to YYYY-MM-DD
+    const [month, day, year] = todayFormatted.split('/');
+    const todayYYYYMMDD = `${year}-${month}-${day}`;
+    
+    // Calculate tomorrow
+    const tomorrowDate = new Date(now.getTime() + 86400000);
+    const tomorrowFormatted = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(tomorrowDate);
+    
+    const [tomorrowMonth, tomorrowDay, tomorrowYear] = tomorrowFormatted.split('/');
+    const tomorrowYYYYMMDD = `${tomorrowYear}-${tomorrowMonth}-${tomorrowDay}`;
+    
+    const currentDayName = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      weekday: 'long'
+    }).format(now);
+    
+    console.log('Today formatted (YYYY-MM-DD):', todayYYYYMMDD);
+    console.log('Tomorrow formatted (YYYY-MM-DD):', tomorrowYYYYMMDD);
+    console.log('Current day name:', currentDayName);
+    console.log('Text from user:', text);
+    console.log('================================================');
+
     const recentEventsContext = recentEvents.length > 0 
       ? `Recently created/mentioned events:\n${recentEvents.map((e, i) => 
-          `${i + 1}. "${e.summary || e.title}" at ${new Date(e.start).toLocaleString()}`
+          `${i + 1}. "${e.summary || e.title}" at ${new Date(e.start).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
         ).join('\n')}`
       : 'No recent events';
 
     const allEventsContext = allEvents.length > 0
       ? `All calendar events:\n${allEvents.slice(0, 10).map((e, i) => 
-          `${i + 1}. "${e.title || e.summary}" at ${new Date(e.start).toLocaleString()}`
+          `${i + 1}. "${e.title || e.summary}" at ${new Date(e.start).toLocaleString('en-US', { timeZone: 'America/New_York' })}`
         ).join('\n')}`
       : 'No calendar events';
 
-    const prompt = `Analyze if user wants to update/reschedule an existing event.
+      const prompt = `Analyze if user wants to update/reschedule an existing event.
+
+CRITICAL - CURRENT DATE/TIME:
+- Today is ${currentDayName}, ${todayYYYYMMDD}
+- Tomorrow is ${tomorrowYYYYMMDD}
+- Current Eastern time: ${now.toLocaleTimeString('en-US', { timeZone: 'America/New_York' })}
+
+REMEMBER - TIME OF DAY REFERENCES:
+- "this morning" = ${todayYYYYMMDD}
+- "this afternoon" = ${todayYYYYMMDD}
+- "this evening" = ${todayYYYYMMDD}
+- "tonight" = ${todayYYYYMMDD}
+- "today" = ${todayYYYYMMDD}
+- "tomorrow morning" = ${tomorrowYYYYMMDD}
+- "tomorrow afternoon" = ${tomorrowYYYYMMDD}
+- "tomorrow evening" = ${tomorrowYYYYMMDD}
+- "tomorrow night" = ${tomorrowYYYYMMDD}
+- "tomorrow" = ${tomorrowYYYYMMDD}
 
 Text: "${text}"
 
@@ -231,36 +295,72 @@ Respond with ONLY valid JSON:
 {
   "isUpdateRequest": true or false,
   "eventToUpdate": "EXACT name of event from the lists above",
-  "newTime": "ISO 8601 datetime if time change requested",
-  "newDate": "ISO 8601 date if date change requested",
+  "newTime": "ISO 8601 datetime WITH TIMEZONE (e.g., 2025-12-03T17:45:00-05:00)",
+  "newDate": "ISO 8601 date if only date change (YYYY-MM-DD)",
   "newTitle": "new title if renaming",
   "confidence": 0.0-1.0,
   "reasoning": "brief explanation"
 }
 
+CRITICAL: WHEN IS IT AN UPDATE vs NEW EVENT?
+
+UPDATE REQUEST = User explicitly wants to change an EXISTING event:
+- "reschedule X to Y"
+- "move X to Y"
+- "change X to Y"
+- "X is too early/late, make it Y"
+- User mentions an event name that EXISTS in the lists above
+
+NEW EVENT = User wants to CREATE something new:
+- "I need to X"
+- "I have to X"
+- "Add X to my calendar"
+- "Schedule X"
+- "Reminder to X"
+- User mentions something NOT in the event lists above
+- Example: "I need to pick up my prescription" (if "prescription" is NOT in events list) → NEW EVENT
+
 CRITICAL MATCHING RULES:
-1. "reschedule X for/to Y" = ALWAYS an update request (confidence 1.0)
-2. "move X to Y" = ALWAYS an update request (confidence 1.0)
-3. "change X to Y" = ALWAYS an update request (confidence 1.0)
-4. When user mentions part of an event name, find the BEST match from the lists above
-5. "post office" should match "Go to the post office" (not "Working")
-6. "dentist" should match "Dentist appointment" (not other events)
-7. Return the EXACT event title from the list, not a shortened version
-8. If user mentions a keyword, find ALL events containing that keyword and pick the MOST RELEVANT one
-9. For time references like "4:30", determine if it's AM or PM based on context (default PM for afternoon/evening times)
+1. ONLY match to existing events if user mentions a keyword from an event in the lists
+2. If user says "pick up prescription" but NO event contains "prescription" → isUpdateRequest: FALSE
+3. "reschedule X for/to Y" = update (confidence 1.0)
+4. "move X to Y" = update (confidence 1.0)
+5. "change X to Y" = update (confidence 1.0)
+6. Return EXACT event title from list, not shortened version
+7. For time references like "4:30", determine AM/PM from context (default PM for afternoon/evening)
 
-IMPORTANT: If user says "the post office", "post office", or mentions any distinctive keyword from an event title, you MUST match it to the event containing those keywords, NOT to unrelated events like "Working".
+CRITICAL RULES FOR DATES:
+1. "this morning/afternoon/evening/tonight" → use ${todayYYYYMMDD}
+2. "tomorrow morning/afternoon/evening/night" → use ${tomorrowYYYYMMDD}
+3. "today" → use ${todayYYYYMMDD}
+4. "tomorrow" → use ${tomorrowYYYYMMDD}
+5. ALWAYS include timezone offset: -05:00
 
-Examples:
-- "reschedule post office for 4:30" → eventToUpdate: "Go to the post office" (NOT "Working")
-- "move dentist to 3pm" → eventToUpdate: "Dentist appointment"
-- "that's too early, change it to 10am" → use most recent event
-- "add groceries at 5pm" → isUpdateRequest: false (new event)`;
+TIME OF DAY DEFAULTS:
+- "morning" → 09:00:00
+- "afternoon" → 14:00:00
+- "evening" → 18:00:00
+- "night" → 20:00:00
+
+EXAMPLES:
+✓ UPDATE: "move pack up boxes to tonight" (event "Pack up all of the boxes" exists)
+→ isUpdateRequest: true, eventToUpdate: "Pack up all of the boxes"
+
+✓ UPDATE: "reschedule post office to tomorrow"  (event "Go to the post office" exists)
+→ isUpdateRequest: true, eventToUpdate: "Go to the post office"
+
+✗ NEW EVENT: "I need to pick up my prescription tomorrow" (no event contains "prescription")
+→ isUpdateRequest: FALSE
+
+✗ NEW EVENT: "Schedule dentist for 3pm" (no event contains "dentist")
+→ isUpdateRequest: FALSE
+
+CRITICAL: Check if the event actually EXISTS in the lists before marking isUpdateRequest: true!`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.2,
+      temperature: 0.1,
     });
 
     const responseText = completion.choices[0].message.content.trim();
@@ -271,6 +371,13 @@ Examples:
     
     const result = JSON.parse(cleanedText);
     console.log('Update intent analysis:', result);
+    
+    // FALLBACK: If timezone is missing, add it
+    if (result.newTime && !result.newTime.includes('-05:00') && !result.newTime.includes('Z')) {
+      console.warn('Timezone missing from newTime, adding -05:00');
+      result.newTime = result.newTime + '-05:00';
+    }
+    
     return result;
   } catch (error) {
     console.error('Error analyzing update intent:', error);

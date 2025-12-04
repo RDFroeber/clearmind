@@ -21,14 +21,21 @@ router.post('/check-update', async (req, res) => {
 
     console.log('=== BACKEND: Check Update Intent ===');
     console.log('Text:', text);
-    console.log('Recent events count:', recentEvents?.length || 0);
-    console.log('All events count:', allEvents?.length || 0);
+    console.log('Recent events count (raw):', recentEvents?.length || 0);
+    console.log('All events count (raw):', allEvents?.length || 0);
     
-    if (recentEvents?.length > 0) {
-      console.log('Recent events:', recentEvents.map(e => e.summary || e.title));
+    // Filter out null/undefined events to prevent crashes
+    const filteredRecentEvents = (recentEvents || []).filter(e => e != null);
+    const filteredAllEvents = (allEvents || []).filter(e => e != null);
+    
+    console.log('Recent events count (filtered):', filteredRecentEvents.length);
+    console.log('All events count (filtered):', filteredAllEvents.length);
+    
+    if (filteredRecentEvents.length > 0) {
+      console.log('Recent events:', filteredRecentEvents.map(e => e.summary || e.title));
     }
-    if (allEvents?.length > 0) {
-      console.log('All events:', allEvents.slice(0, 5).map(e => e.summary || e.title));
+    if (filteredAllEvents.length > 0) {
+      console.log('All events:', filteredAllEvents.slice(0, 5).map(e => e.summary || e.title));
     }
 
     if (!text) {
@@ -37,8 +44,8 @@ router.post('/check-update', async (req, res) => {
 
     const updateAnalysis = await analyzeUpdateIntent(
       text, 
-      recentEvents || [], 
-      allEvents || []
+      filteredRecentEvents, 
+      filteredAllEvents
     );
     
     console.log('Update analysis result:', updateAnalysis);
