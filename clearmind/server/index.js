@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import speechRoutes from './routes/speech.js';
 import calendarRoutes from './routes/calendar.js';
+import familyGroupsRoutes from './routes/familyGroups.js';
+
 
 dotenv.config();
 
@@ -26,6 +28,7 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/speech', speechRoutes);
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/family-groups', familyGroupsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

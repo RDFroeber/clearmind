@@ -1,10 +1,12 @@
 import React from 'react';
-import { RefreshCcw, Settings, Trash2, Calendar as CalendarIcon } from 'lucide-react';
+import { RefreshCcw, Settings, Trash2, Users, Calendar as CalendarIcon } from 'lucide-react';
 
 export default function Header({ 
   clearChat, 
   toggleSettings, 
   toggleCalendar, 
+  toggleFamilyGroups,
+  showFamilyGroups,
   showCalendar, 
   showSettings, 
   hasCalendarAccess,
@@ -28,6 +30,18 @@ export default function Header({
 
         {/* Action buttons */}
         <div className="flex items-center gap-1 md:gap-2">
+          <button
+            onClick={toggleFamilyGroups}
+            className={`p-2 rounded-lg transition flex items-center gap-1 md:gap-2 ${
+              showFamilyGroups 
+                ? 'bg-white text-purple-900 shadow-md' 
+                : 'bg-purple-700 hover:bg-purple-600 text-purple-100'
+            }`}
+            title="Family Groups"
+          >
+            <Users size={18} className="md:w-5 md:h-5" />
+          </button>
+          
           {/* Refresh Calendar Button */}
           {hasCalendarAccess && (
             <button

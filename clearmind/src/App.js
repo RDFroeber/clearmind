@@ -10,15 +10,18 @@ import useAuth from './hooks/useAuth.js';
 import useSettings from './hooks/useSettings.js';
 import useCalendarEvents from './hooks/useCalendarEvents.js';
 import useMessageProcessing from './hooks/useMessageProcessing.js';
+import FamilyGroups from './components/FamilyGroups.js';
+
 
 export default function App() {
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showFamilyGroups, setShowFamilyGroups] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [apiConfigured, setApiConfigured] = useState(false);
 
-  const { isAuthenticated, googleAccessToken, handleGoogleSignIn, handleGoogleSignOut } = useAuth();
+  const { isAuthenticated, googleAccessToken, userEmail, userName, handleGoogleSignIn, handleGoogleSignOut } = useAuth();
   const { userSettings, updateSettings } = useSettings();
   const { 
     calendarEvents, 
@@ -71,12 +74,26 @@ export default function App() {
         clearChat={() => setMessages([])}
         toggleSettings={() => {
           setShowSettings(prev => !prev);
-          if (!showSettings) setShowCalendar(false);
+          if (!showSettings) {
+            setShowCalendar(false);
+            setShowFamilyGroups(false);
+          }
         }}
         toggleCalendar={() => {
           setShowCalendar(prev => !prev);
-          if (!showCalendar) setShowSettings(false);
+          if (!showCalendar) {
+            setShowFamilyGroups(false);
+            setShowSettings(false);
+          } 
         }}
+        toggleFamilyGroups={() => {
+          setShowFamilyGroups(prev => !prev);
+          if (!showFamilyGroups) {
+            setShowSettings(false);
+            setShowCalendar(false);
+          }
+        }}
+        showFamilyGroups={showFamilyGroups}
         showCalendar={showCalendar}
         showSettings={showSettings}
         hasCalendarAccess={!!googleAccessToken}
@@ -102,6 +119,13 @@ export default function App() {
           googleAccessToken={googleAccessToken}
           events={calendarEvents}
           onSignIn={handleGoogleSignIn}
+        />
+      )}
+
+      {showFamilyGroups && (
+        <FamilyGroups
+          userEmail={userEmail} // Get from your auth system
+          userName={userName}   // Get from your auth system
         />
       )}
 

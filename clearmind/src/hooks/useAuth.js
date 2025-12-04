@@ -5,6 +5,8 @@ const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 export default function useAuth() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [googleAccessToken, setGoogleAccessToken] = useState('');
+  const [userEmail, setUserEmail] = useState('');
+  const [userName, setUserName] = useState('');
 
   // Load saved token on mount
   useEffect(() => {
@@ -62,11 +64,30 @@ export default function useAuth() {
 
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/calendar',
+      scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
       callback: async (response) => {
         if (response.access_token) {
           saveGoogleToken(response.access_token);
           setIsAuthenticated(true);
+          
+          // Fetch user info
+          try {
+            const userInfoResponse = await fetch(
+              'https://www.googleapis.com/oauth2/v2/userinfo',
+              {
+                headers: {
+                  Authorization: `Bearer ${response.access_token}`
+                }
+              }
+            );
+            const userInfo = await userInfoResponse.json();
+            setUserEmail(userInfo.email);
+            setUserName(userInfo.name);
+            localStorage.setItem('user_email', userInfo.email);
+            localStorage.setItem('user_name', userInfo.name);
+          } catch (error) {
+            console.error('Error fetching user info:', error);
+          }
         }
       },
     });
@@ -81,6 +102,8 @@ export default function useAuth() {
   return {
     isAuthenticated,
     googleAccessToken,
+    userEmail,
+    userName,
     handleGoogleSignIn,
     handleGoogleSignOut
   };
