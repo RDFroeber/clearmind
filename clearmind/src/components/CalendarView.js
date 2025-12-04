@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import enUS from 'date-fns/locale/en-US';
@@ -18,6 +18,8 @@ const localizer = dateFnsLocalizer({
 });
 
 export default function CalendarView({ googleAccessToken, events, onSignIn }) {
+  const [view, setView] = useState('week');
+  const [currentDate, setCurrentDate] = useState(new Date());
   // Transform events for the calendar
   const calendarEvents = events.map(event => {
     // Check if it's an all-day event (date-only format, no time component)
@@ -89,8 +91,12 @@ export default function CalendarView({ googleAccessToken, events, onSignIn }) {
             endAccessor="end"
             titleAccessor="title"
             style={{ height: '100%' }}
+            view={view}
+            onView={setView}
             defaultView="week"
             views={['month', 'week', 'day']}
+            date={currentDate}
+            onNavigate={setCurrentDate}
             step={30}
             showMultiDayTimes
             defaultDate={new Date()}

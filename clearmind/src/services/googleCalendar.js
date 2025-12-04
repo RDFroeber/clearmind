@@ -61,7 +61,7 @@ export async function fetchCalendarEvents(accessToken) {
   try {
     // Get events starting from beginning of today (midnight)
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()-7);
     const timeMin = todayStart.toISOString();
     
     console.log('=== Fetching Google Calendar Events ===');
